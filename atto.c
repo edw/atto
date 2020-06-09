@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <ctype.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +13,8 @@ enum { FALSE, TRUE };
 typedef enum token_type {
   UNKNOWN=-2, END=-1, TAG=0,
   SYMBOL=1, INTEGER=2, STRING=3,
-  OPEN_PAREN=4, CLOSE_PAREN=5, APOSTROPHE=6
+  OPEN_PAREN=4, CLOSE_PAREN=5,
+  APOSTROPHE=6
 } token_type;
 
 typedef struct lexer {
@@ -251,17 +253,17 @@ int lexer_get_token(lexer *s, token *t) {
   return (t->type != END);
 }
 
-/* Parser */
-
 typedef struct parser {
   lexer lex;
   token current_token, next_token;
+  int indent_level;
 } parser;
 
 void parser_next_token(parser *p);
 
 void init_parser(parser *p, get_char_fn get, unget_char_fn unget) {
   init_lexer(&p->lex, get, unget);
+  p->indent_level = 0;
   p->current_token.chs = p->next_token.chs = NULL;
   parser_next_token(p);
   parser_next_token(p);
@@ -298,8 +300,6 @@ void parser_next_token(parser *p) {
   lexer_get_token(&p->lex, &p->next_token);
 }
 
-/* Main code */
-
 int ungotten = '\0';
 void stdin_unget_char(void *cookie, int ch) {
   ungotten = ch;
@@ -321,21 +321,140 @@ int stdin_get_char(void *cookie) {
   }
 }
 
+void parse_abort(parser *p, char *fmt, ...) {
+  va_list ap;
+
+  fputs("Parse error: ", stderr);
+
+  va_start(ap, fmt);
+  vfprintf(stderr, fmt, ap);
+  va_end(ap);
+
+  fprintf(stderr, " at %d:%d.\n",
+          p->current_token.line_no,
+          p->current_token.line_pos);
+
+  exit(EXIT_FAILURE);
+}
+
+void parse_match(parser *p, int type, char *optional_chs) {
+  if (p->current_token.type != type)
+    parse_abort(p, "Expected token type %d but got %d",
+                type, p->current_token.type);
+  if((optional_chs != NULL)
+     && (strcmp(optional_chs, p->current_token.chs) != 00))
+    parse_abort(p, "Expected token of type %d to have value %s but got %s",
+                type, optional_chs, p->current_token.chs);
+
+  parser_next_token(p);
+}
+
+int parse_test(parser *p, int type, char *optional_chs) {
+  if (p->current_token.type != type)
+    return FALSE;
+  if (optional_chs == NULL)
+    return TRUE;
+
+  return (strcmp(optional_chs, p->current_token.chs) == 0);
+}
+
+void indent(parser *p) {
+  p->indent_level += 2;
+}
+
+void outdent(parser *p) {
+  p->indent_level -= 2;
+}
+
+void emit(parser *p, char *fmt, ...) {
+  va_list ap;
+  int n = p->indent_level;
+  int i;
+
+  for(i = 0; i < n; i++) {
+    putchar(' '); putchar(' ');
+  }
+  fputs("Emit: ", stdout);
+
+  va_start(ap, fmt);
+  vprintf(fmt, ap);
+  va_end(ap);
+
+  putchar('\n');
+}
+
+void parse_expression(parser *p);
+
+void parse_quoted(parser *p) {
+  emit(p, "QUOTED");
+  indent(p);
+  parse_expression(p);
+  outdent(p);
+}
+
+void parse_list(parser *p) {
+  parse_match(p, OPEN_PAREN, NULL);
+  if(parse_test(p, SYMBOL, "QUOTE")) {
+    parse_match(p, SYMBOL, "QUOTE");
+    parse_quoted(p);
+    parse_match(p, CLOSE_PAREN, NULL);
+  } else {
+    emit(p, "LIST");
+    indent(p);
+    while(p->current_token.type != CLOSE_PAREN) {
+      parse_expression(p);
+    }
+    parse_match(p, CLOSE_PAREN, NULL);
+    outdent(p);
+  }
+}
+
+void parse_tagged(parser *p) {
+  emit(p, "TAGGED %s:", p->current_token.chs);
+  parse_match(p, TAG, NULL);
+  indent(p);
+  parse_expression(p);
+  outdent(p);
+}
+
+void parse_expression(parser *p) {
+  if (p->current_token.type == INTEGER) {
+    emit(p, "INTEGER %s", p->current_token.chs);
+    parser_next_token(p);
+  } else if (p->current_token.type == STRING) {
+    emit(p, "STRING %s", p->current_token.chs);
+    parser_next_token(p);
+  } else if (p->current_token.type == SYMBOL) {
+    emit(p, "SYMBOL %s", p->current_token.chs);
+    parser_next_token(p);
+  } else if (p->current_token.type == OPEN_PAREN) {
+    parse_list(p);
+  } else if (p->current_token.type == TAG) {
+    parse_tagged(p);
+  } else if (p->current_token.type == APOSTROPHE) {
+    parser_next_token(p);
+    parse_quoted(p);
+  } else {
+    parse_abort(p, "Expected expression but got"
+                " token type %d with value %s",
+                p->current_token.type,
+                p->current_token.chs);
+  }
+}
+
+void parse_program(parser *p) {
+  while(p->current_token.type != END) {
+    parse_expression(p);
+  }
+}
+
 int main(int argc, char **argv) {
   char *description;
   parser parser;
 
   init_parser(&parser, stdin_get_char, stdin_unget_char);
-
-  while (parser.current_token.type != END) {
-    description = token_description_alloc(&parser.current_token);
-    if (description == NULL)
-      exit(EXIT_FAILURE);
-    printf("%s\n", description);
-    free(description);
-    parser_next_token(&parser);
-  }
-
+  parse_program(&parser);
   destroy_parser(&parser);
+
   return 0;
 }

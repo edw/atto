@@ -1,0 +1,5 @@
+(DEFINE (FACT #INT X)
+  (COND (= X 0) 1
+        (= X 1) 1
+        ELSE
+        (* X (FACT (DEC X)))))

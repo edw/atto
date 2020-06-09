@@ -1,0 +1,27 @@
+Emit: LIST
+    Emit: SYMBOL DEFINE
+    Emit: LIST
+        Emit: SYMBOL FACT
+        Emit: TAGGED #INT:
+            Emit: SYMBOL X
+    Emit: LIST
+        Emit: SYMBOL COND
+        Emit: LIST
+            Emit: SYMBOL =
+            Emit: SYMBOL X
+            Emit: INTEGER 0
+        Emit: INTEGER 1
+        Emit: LIST
+            Emit: SYMBOL =
+            Emit: SYMBOL X
+            Emit: INTEGER 1
+        Emit: INTEGER 1
+        Emit: SYMBOL ELSE
+        Emit: LIST
+            Emit: SYMBOL *
+            Emit: SYMBOL X
+            Emit: LIST
+                Emit: SYMBOL FACT
+                Emit: LIST
+                    Emit: SYMBOL DEC
+                    Emit: SYMBOL X

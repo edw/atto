@@ -33,18 +33,16 @@ typedef struct entry {
   value value;
 } entry;
 
-typedef struct table {
-  int size;
-  entry *entries;
-} args;
-
 typedef struct record {
   struct env *parent;
   int capacity;
   int size;
   entry *entries;
-} record, env;
+} record;
 
-typedef void (*continuation_fn)(value *, continuation, env *);
+typedef void (*continuation_fn)(value *ret,
+                                continuation k,
+                                vector *args,
+                                record *env);
 
 #endif

@@ -1,0 +1,26 @@
+Emit: LIST
+    Emit: SYMBOL LET
+    Emit: LIST
+        Emit: LIST
+            Emit: SYMBOL X
+            Emit: QUASIQUOTED
+                Emit: LIST
+                    Emit: UNQUOTE_SPLICED
+                        Emit: LIST
+                            Emit: INTEGER 1
+                            Emit: INTEGER 2
+                            Emit: INTEGER 3
+                    Emit: UNQUOTED
+                        Emit: SYMBOL X
+        Emit: LIST
+            Emit: SYMBOL Y
+            Emit: INTEGER 2
+    Emit: QUASIQUOTED
+        Emit: LIST
+            Emit: UNQUOTED
+                Emit: SYMBOL X
+            Emit: UNQUOTE_SPLICED
+                Emit: LIST
+                    Emit: SYMBOL +
+                    Emit: SYMBOL Y
+                    Emit: INTEGER 1

@@ -1,9 +1,10 @@
-#define _GNU_SOURCE
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "runtime.h"
 
 typedef int (*get_char_fn)(void *);
 typedef void (*unget_char_fn)(void *, int);
@@ -14,7 +15,8 @@ typedef enum token_type {
   UNKNOWN=-2, END=-1, TAG=0,
   SYMBOL=1, INTEGER=2, STRING=3,
   OPEN_PAREN=4, CLOSE_PAREN=5,
-  APOSTROPHE=6
+  APOSTROPHE=6, QUASIQUOTE=7,
+  UNQUOTE=8, UNQUOTE_SPLICE=9
 } token_type;
 
 typedef struct lexer {
@@ -23,7 +25,6 @@ typedef struct lexer {
   long current_line_pos;
   long current_offset;
   char current_char;
-  char next_char;
   get_char_fn  get_char;
   unget_char_fn unget_char;
   int token_line_no;
@@ -152,7 +153,8 @@ void token_set(token* t, lexer *s, int token_type) {
 }
 
 int isnumsym(int ch) {
-  if((ch == '(') || (ch == ')') || (ch == '"') || (ch == '\'')
+  if((ch == '(') || (ch == ')') || (ch == '"')
+     || (ch == '\'') || (ch == ',')
      || isspace(ch))
     return FALSE;
 
@@ -196,6 +198,19 @@ int lexer_get_token(lexer *s, token *t) {
     token_set(t, s, END);
     lexer_next_char(s);
 
+  } else if (s->current_char == '`') {
+    token_set(t,s, QUASIQUOTE);
+    lexer_next_char(s);
+
+  } else if (s->current_char == ',') {
+    if(lexer_peek(s) == '@') {
+      lexer_next_char(s);
+      token_set(t,s, UNQUOTE_SPLICE);
+      lexer_next_char(s);
+    } else {
+      token_set(t,s, UNQUOTE);
+      lexer_next_char(s);
+    }
   } else if (s->current_char == '\'') {
     token_set(t, s, APOSTROPHE);
     lexer_next_char(s);
@@ -257,6 +272,7 @@ typedef struct parser {
   lexer lex;
   token current_token, next_token;
   int indent_level;
+  int in_quasiquote;
 } parser;
 
 void parser_next_token(parser *p);
@@ -264,6 +280,7 @@ void parser_next_token(parser *p);
 void init_parser(parser *p, get_char_fn get, unget_char_fn unget) {
   init_lexer(&p->lex, get, unget);
   p->indent_level = 0;
+  p->in_quasiquote = 0;
   p->current_token.chs = p->next_token.chs = NULL;
   parser_next_token(p);
   parser_next_token(p);
@@ -392,12 +409,70 @@ void parse_quoted(parser *p) {
   outdent(p);
 }
 
+void parse_quasiquoted(parser *p) {
+  emit(p, "QUASIQUOTED");
+
+  p->in_quasiquote++;
+  indent(p);
+
+  parse_expression(p);
+
+  outdent(p);
+  p->in_quasiquote--;
+}
+
+void parse_unquoted(parser *p) {
+  emit(p, "UNQUOTED");
+
+  if (p->in_quasiquote < 1)
+    parse_abort(p, "Unquoting only legal within quasiquoting");
+
+  p->in_quasiquote--;
+  indent(p);
+
+  parse_expression(p);
+
+  outdent(p);
+  p->in_quasiquote++;
+}
+
+void parse_unquote_spliced(parser *p) {
+  emit(p, "UNQUOTE_SPLICED");
+
+  if (p->in_quasiquote < 1)
+    parse_abort(p, "Unquoting only legal within quasiquoting");
+
+  p->in_quasiquote--;
+  indent(p);
+
+  parse_expression(p);
+
+  outdent(p);
+  p->in_quasiquote++;
+}
+
 void parse_list(parser *p) {
   parse_match(p, OPEN_PAREN, NULL);
-  if(parse_test(p, SYMBOL, "QUOTE")) {
+  if (parse_test(p, SYMBOL, "QUOTE")) {
     parse_match(p, SYMBOL, "QUOTE");
     parse_quoted(p);
     parse_match(p, CLOSE_PAREN, NULL);
+
+  } else if (parse_test(p, SYMBOL, "UNQUOTE")) {
+    parse_match(p, SYMBOL, "UNQUOTE");
+    parse_unquoted(p);
+    parse_match(p, CLOSE_PAREN, NULL);
+
+  } else if (parse_test(p, SYMBOL, "UNQUOTE-SPLICE")) {
+    parse_match(p, SYMBOL, "UNQUOTE-SPLICE");
+    parse_unquote_spliced(p);
+    parse_match(p, CLOSE_PAREN, NULL);
+
+  } else if (parse_test(p, SYMBOL, "QUASI-QUOTE")) {
+    parse_match(p, SYMBOL, "QUASI-QUOTE");
+    parse_quasiquoted(p);
+    parse_match(p, CLOSE_PAREN, NULL);
+
   } else {
     emit(p, "LIST");
     indent(p);
@@ -434,6 +509,15 @@ void parse_expression(parser *p) {
   } else if (p->current_token.type == APOSTROPHE) {
     parser_next_token(p);
     parse_quoted(p);
+  } else if (p->current_token.type == QUASIQUOTE) {
+    parser_next_token(p);
+    parse_quasiquoted(p);
+  } else if (p->current_token.type == UNQUOTE) {
+    parser_next_token(p);
+    parse_unquoted(p);
+  } else if (p->current_token.type == UNQUOTE_SPLICE) {
+    parser_next_token(p);
+    parse_unquote_spliced(p);
   } else {
     parse_abort(p, "Expected expression but got"
                 " token type %d with value %s",

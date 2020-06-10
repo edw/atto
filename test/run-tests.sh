@@ -2,14 +2,14 @@
 
 cd $(dirname $0)
 
-for t in $(find . -name '*.in' -not -name '.*' \
-               | sed -e 's|\./\(.*\).in$|\1|' \
-               | sort)
+tests=$(find . -name '*.in' -not -name '.*' \
+            | sed -e 's|\./\(.*\).in$|\1|' \
+            | sort)
 
-do
+for t in $tests; do
     echo -n "${t}: " \
         && (../atto < "${t}.in" \
-                | diff - "${t}.expect" \
+                | diff "${t}.expect" - \
                 &&  echo PASS) \
         || echo FAIL;
 done

@@ -3,3 +3,4 @@ atto
 *.o
 \#*
 .\#*
+Makefile.deps

@@ -1,7 +1,16 @@
-CC=clang
-CFLAGS=-O0 -g -std=c89 -D _GNU_SOURCE
+SRCS = $(shell ls *.c)
+OBJS = $(SRCS:%.c=%.o)
+DEPENDS = Makefile.deps
 
-atto: atto.o runtime.o
+CC = clang
+CFLAGS = -O0 -g -std=c89 -D _GNU_SOURCE
+
+atto: $(OBJS)
 
 clean:
-	rm -f *.o atto
+	rm -f *.o atto $(DEPENDS)
+
+depend:
+	$(CC) -MM -MF - $(CFLAGS) $(SRCS) > $(DEPENDS)
+
+-include $(DEPENDS)
